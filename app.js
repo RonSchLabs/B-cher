@@ -20,6 +20,8 @@ let rafId = null;
 let lastScanAt = 0;
 let scanningActive = false;
 let scannerMode = null;
+let nativeStartedAt = 0;
+let nativeFallbackTriggered = false;
 
 render();
 registerServiceWorker();
@@ -58,8 +60,11 @@ async function startCameraAndScan() {
     }
 
     if ("BarcodeDetector" in window) {
-      await startNativeScanner();
-      return;
+      const supportsBookBarcodes = await supportsNativeBookBarcodeFormats();
+      if (supportsBookBarcodes) {
+        await startNativeScanner();
+        return;
+      }
     }
 
     await startFallbackScanner();
@@ -73,6 +78,26 @@ async function startCameraAndScan() {
       return;
     }
     setStatus(`Kamera-Start fehlgeschlagen: ${error?.name || "Unbekannter Fehler"}`);
+  }
+}
+
+async function supportsNativeBookBarcodeFormats() {
+  try {
+    const ua = navigator.userAgent || "";
+    const isAppleWebKitMobile =
+      /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (isAppleWebKitMobile) {
+      return false;
+    }
+
+    if (typeof window.BarcodeDetector?.getSupportedFormats !== "function") {
+      return false;
+    }
+    const supported = await window.BarcodeDetector.getSupportedFormats();
+    const wanted = ["ean_13", "ean_8", "upc_a", "upc_e"];
+    return wanted.some((format) => supported.includes(format));
+  } catch {
+    return false;
   }
 }
 
@@ -95,6 +120,8 @@ async function startNativeScanner() {
   await cameraEl.play();
   scanningActive = true;
   scannerMode = "native";
+  nativeStartedAt = Date.now();
+  nativeFallbackTriggered = false;
   setStatus("Kamera aktiv. Bücher nacheinander scannen.");
   scanLoop();
 }
@@ -156,6 +183,19 @@ async function scanLoop() {
     return;
   }
 
+  // iOS can expose BarcodeDetector but not decode EAN reliably.
+  // If native mode doesn't decode quickly, switch to html5-qrcode fallback.
+  if (
+    scannerMode === "native" &&
+    !nativeFallbackTriggered &&
+    Date.now() - nativeStartedAt > 6000 &&
+    entries.length === 0
+  ) {
+    nativeFallbackTriggered = true;
+    await switchToFallbackScanner();
+    return;
+  }
+
   try {
     const barcodes = await detector.detect(cameraEl);
     if (barcodes.length > 0) {
@@ -166,6 +206,27 @@ async function scanLoop() {
   }
 
   rafId = requestAnimationFrame(scanLoop);
+}
+
+async function switchToFallbackScanner() {
+  try {
+    scanningActive = false;
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if (stream) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+      stream = null;
+    }
+    detector = null;
+    setStatus("Native-Erkennung schwach. Wechsle auf Safari-Fallback...");
+    await startFallbackScanner();
+  } catch {
+    setStatus("Fallback-Wechsel fehlgeschlagen. Bitte Seite neu laden.");
+  }
 }
 
 function handleDetections(barcodes) {
@@ -387,6 +448,8 @@ window.addEventListener("beforeunload", stopScanning);
 
 function stopScanning() {
   scanningActive = false;
+  nativeStartedAt = 0;
+  nativeFallbackTriggered = false;
   if (rafId) {
     cancelAnimationFrame(rafId);
   }
