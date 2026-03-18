@@ -75,15 +75,27 @@ video {
 }
 
 #fallbackReader {
+  position: relative;
   width: 100%;
   min-height: 260px;
   background: #000;
+  overflow: hidden;
 }
 
 #fallbackReader video {
   width: 100% !important;
   height: auto !important;
   object-fit: cover;
+}
+
+#fallbackReader canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+
+#fallbackReader canvas.drawingBuffer {
+  position: absolute;
+  inset: 0;
 }
 
 #fallbackReader__scan_region {

@@ -1,9 +1,9 @@
 const STORAGE_KEY = "isbn_scanner_entries_v1";
 const SCAN_COOLDOWN_MS = 1200;
+const QUAGGA_READERS = ["ean_reader", "ean_8_reader", "upc_reader", "upc_e_reader"];
 
 const cameraEl = document.getElementById("camera");
 const fallbackReaderEl = document.getElementById("fallbackReader");
-const photoReaderEl = document.getElementById("photoReader");
 const overlayEl = document.querySelector(".overlay");
 const startBtn = document.getElementById("startBtn");
 const photoScanBtn = document.getElementById("photoScanBtn");
@@ -16,16 +16,9 @@ const isbnList = document.getElementById("isbnList");
 
 let entries = loadEntries();
 let isbnSet = new Set(entries.map((entry) => entry.isbn));
-let detector = null;
-let html5Qrcode = null;
-let photoQrcode = null;
-let stream = null;
-let rafId = null;
 let lastScanAt = 0;
 let scanningActive = false;
-let scannerMode = null;
-let nativeStartedAt = 0;
-let nativeFallbackTriggered = false;
+let quaggaHandler = null;
 
 render();
 registerServiceWorker();
@@ -42,38 +35,34 @@ async function autoStartIfPossible() {
   try {
     await startCameraAndScan();
   } catch {
-    // iOS needs a user interaction for camera permissions in many cases.
+    // iOS often needs user interaction for camera permissions.
   }
 }
 
 async function startCameraAndScan() {
+  if (!window.isSecureContext) {
+    setStatus("Kamera geht nur über HTTPS oder localhost.");
+    return;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus("Kamera-API ist auf diesem Gerät/Browser nicht verfügbar.");
+    return;
+  }
+
+  if (!window.Quagga) {
+    setStatus("Scanner-Bibliothek nicht geladen. Bitte Seite neu laden.");
+    return;
+  }
+
+  if (scanningActive) {
+    setStatus("Scanner läuft bereits. Bücher nacheinander scannen.");
+    return;
+  }
+
   try {
-    setStatus("Starte Kamera...");
-
-    if (!window.isSecureContext) {
-      setStatus("Kamera geht nur über HTTPS oder localhost.");
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setStatus("Kamera-API ist auf diesem Gerät/Browser nicht verfügbar.");
-      return;
-    }
-
-    if (scanningActive) {
-      setStatus("Scanner läuft bereits.");
-      return;
-    }
-
-    if ("BarcodeDetector" in window) {
-      const supportsBookBarcodes = await supportsNativeBookBarcodeFormats();
-      if (supportsBookBarcodes) {
-        await startNativeScanner();
-        return;
-      }
-    }
-
-    await startFallbackScanner();
+    setStatus("Starte Scanner...");
+    await startQuaggaLiveScanner();
   } catch (error) {
     if (error?.name === "NotAllowedError") {
       setStatus("Kamerazugriff blockiert. Bitte in Safari erlauben.");
@@ -83,105 +72,66 @@ async function startCameraAndScan() {
       setStatus("Keine Kamera gefunden.");
       return;
     }
-    setStatus(`Kamera-Start fehlgeschlagen: ${error?.name || "Unbekannter Fehler"}`);
+    setStatus("Scanner-Start fehlgeschlagen. Bitte Seite neu laden.");
   }
 }
 
-async function supportsNativeBookBarcodeFormats() {
-  try {
-    const ua = navigator.userAgent || "";
-    const isAppleWebKitMobile =
-      /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    if (isAppleWebKitMobile) {
-      return false;
-    }
+function startQuaggaLiveScanner() {
+  return new Promise((resolve, reject) => {
+    cameraEl.hidden = true;
+    fallbackReaderEl.hidden = false;
+    overlayEl.classList.remove("hidden");
+    fallbackReaderEl.innerHTML = "";
 
-    if (typeof window.BarcodeDetector?.getSupportedFormats !== "function") {
-      return false;
-    }
-    const supported = await window.BarcodeDetector.getSupportedFormats();
-    const wanted = ["ean_13", "ean_8", "upc_a", "upc_e"];
-    return wanted.some((format) => supported.includes(format));
-  } catch {
-    return false;
-  }
-}
-
-async function startNativeScanner() {
-  cameraEl.hidden = false;
-  fallbackReaderEl.hidden = true;
-  overlayEl.classList.remove("hidden");
-
-  detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: { ideal: "environment" },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 }
-    },
-    audio: false
-  });
-
-  cameraEl.srcObject = stream;
-  await cameraEl.play();
-  scanningActive = true;
-  scannerMode = "native";
-  nativeStartedAt = Date.now();
-  nativeFallbackTriggered = false;
-  setStatus("Kamera aktiv. Bücher nacheinander scannen.");
-  scanLoop();
-}
-
-async function startFallbackScanner() {
-  if (!window.Html5Qrcode) {
-    setStatus("Fallback-Scanner nicht geladen. Bitte Seite neu laden.");
-    return;
-  }
-
-  cameraEl.hidden = true;
-  fallbackReaderEl.hidden = false;
-  overlayEl.classList.add("hidden");
-
-  html5Qrcode = new Html5Qrcode("fallbackReader");
-  const formatsToSupport = [];
-
-  if (window.Html5QrcodeSupportedFormats?.EAN_13) {
-    formatsToSupport.push(window.Html5QrcodeSupportedFormats.EAN_13);
-  }
-  if (window.Html5QrcodeSupportedFormats?.EAN_8) {
-    formatsToSupport.push(window.Html5QrcodeSupportedFormats.EAN_8);
-  }
-  if (window.Html5QrcodeSupportedFormats?.UPC_A) {
-    formatsToSupport.push(window.Html5QrcodeSupportedFormats.UPC_A);
-  }
-  if (window.Html5QrcodeSupportedFormats?.UPC_E) {
-    formatsToSupport.push(window.Html5QrcodeSupportedFormats.UPC_E);
-  }
-
-  await html5Qrcode.start(
-    { facingMode: "environment" },
-    {
-      fps: 12,
-      aspectRatio: 4 / 3,
-      disableFlip: false,
-      qrbox: (viewfinderWidth, viewfinderHeight) => {
-        const width = Math.floor(Math.min(viewfinderWidth * 0.92, 560));
-        const height = Math.floor(Math.max(110, Math.min(viewfinderHeight * 0.30, 220)));
-        return { width, height };
+    window.Quagga.init(
+      {
+        inputStream: {
+          type: "LiveStream",
+          target: fallbackReaderEl,
+          constraints: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        },
+        locator: {
+          patchSize: "medium",
+          halfSample: true
+        },
+        numOfWorkers: 0,
+        frequency: 10,
+        decoder: {
+          readers: QUAGGA_READERS
+        },
+        locate: true
       },
-      formatsToSupport: formatsToSupport.length > 0 ? formatsToSupport : undefined
-    },
-    (decodedText) => {
-      handleRawCode(decodedText);
-    },
-    () => {
-      // Ignore continuous decode misses.
-    }
-  );
+      (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
 
-  scanningActive = true;
-  scannerMode = "fallback";
-  setStatus("Kamera aktiv (Safari-Fallback). Bücher nacheinander scannen.");
+        if (quaggaHandler) {
+          window.Quagga.offDetected(quaggaHandler);
+        }
+
+        quaggaHandler = (result) => {
+          const code = result?.codeResult?.code;
+          if (!code) {
+            return;
+          }
+          handleRawCode(code);
+        };
+
+        window.Quagga.onDetected(quaggaHandler);
+        window.Quagga.start();
+
+        scanningActive = true;
+        setStatus("Kamera aktiv. Bücher nacheinander scannen.");
+        resolve();
+      }
+    );
+  });
 }
 
 function triggerPhotoScan() {
@@ -192,97 +142,51 @@ function triggerPhotoScan() {
   photoInput.click();
 }
 
-async function onPhotoSelected(event) {
+function onPhotoSelected(event) {
   const file = event?.target?.files?.[0];
   photoInput.value = "";
+
   if (!file) {
     return;
   }
 
-  if (!window.Html5Qrcode) {
+  if (!window.Quagga) {
     setStatus("Foto-Scan nicht verfügbar. Bitte Seite neu laden.");
     return;
   }
 
-  try {
-    setStatus("Foto wird ausgewertet...");
-    if (!photoReaderEl) {
-      setStatus("Foto-Scan nicht verfügbar.");
-      return;
-    }
-    if (!photoQrcode) {
-      photoQrcode = new Html5Qrcode("photoReader");
-    }
-    const decodedText = await photoQrcode.scanFile(file, true);
-    if (!handleRawCode(decodedText)) {
-      setStatus("Barcode erkannt, aber keine gültige ISBN.");
-    }
-  } catch {
-    setStatus("Kein Barcode im Foto erkannt. Bitte näher rangehen und ruhiger halten.");
-  }
-}
+  setStatus("Foto wird ausgewertet...");
+  const objectUrl = URL.createObjectURL(file);
 
-async function scanLoop() {
-  if (!scanningActive) {
-    return;
-  }
-
-  // iOS can expose BarcodeDetector but not decode EAN reliably.
-  // If native mode doesn't decode quickly, switch to html5-qrcode fallback.
-  if (
-    scannerMode === "native" &&
-    !nativeFallbackTriggered &&
-    Date.now() - nativeStartedAt > 6000 &&
-    entries.length === 0
-  ) {
-    nativeFallbackTriggered = true;
-    await switchToFallbackScanner();
-    return;
-  }
-
-  try {
-    const barcodes = await detector.detect(cameraEl);
-    if (barcodes.length > 0) {
-      handleDetections(barcodes);
-    }
-  } catch {
-    // Ignore occasional frame errors.
-  }
-
-  rafId = requestAnimationFrame(scanLoop);
-}
-
-async function switchToFallbackScanner() {
-  try {
-    scanningActive = false;
-    if (rafId) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
-    }
-    if (stream) {
-      for (const track of stream.getTracks()) {
-        track.stop();
+  window.Quagga.decodeSingle(
+    {
+      src: objectUrl,
+      numOfWorkers: 0,
+      inputStream: {
+        size: 1400
+      },
+      locator: {
+        patchSize: "large",
+        halfSample: false
+      },
+      decoder: {
+        readers: QUAGGA_READERS
+      },
+      locate: true
+    },
+    (result) => {
+      URL.revokeObjectURL(objectUrl);
+      const code = result?.codeResult?.code;
+      if (!code) {
+        setStatus("Kein Barcode im Foto erkannt. Bitte näher ran und scharf fotografieren.");
+        return;
       }
-      stream = null;
-    }
-    detector = null;
-    setStatus("Native-Erkennung schwach. Wechsle auf Safari-Fallback...");
-    await startFallbackScanner();
-  } catch {
-    setStatus("Fallback-Wechsel fehlgeschlagen. Bitte Seite neu laden.");
-  }
-}
 
-function handleDetections(barcodes) {
-  if (Date.now() - lastScanAt < SCAN_COOLDOWN_MS) {
-    return;
-  }
-
-  for (const barcode of barcodes) {
-    if (handleRawCode(barcode.rawValue)) {
-      return;
+      if (!handleRawCode(code)) {
+        setStatus("Barcode erkannt, aber keine gültige ISBN.");
+      }
     }
-  }
+  );
 }
 
 function handleRawCode(rawValue) {
@@ -291,8 +195,7 @@ function handleRawCode(rawValue) {
     return false;
   }
 
-  const raw = normalizeDigits(rawValue);
-  const isbn = toIsbn13(raw);
+  const isbn = toIsbn13(rawValue);
   if (!isbn) {
     return false;
   }
@@ -318,36 +221,64 @@ function handleRawCode(rawValue) {
   return true;
 }
 
-function normalizeDigits(value) {
-  if (!value) {
-    return "";
-  }
-  return String(value).replace(/[^0-9Xx]/g, "").toUpperCase();
-}
+function toIsbn13(value) {
+  const candidates = getIsbnCandidates(value);
+  for (const raw of candidates) {
+    if (/^97[89]\d{10}$/.test(raw) && isValidIsbn13(raw)) {
+      return raw;
+    }
 
-function toIsbn13(raw) {
-  if (!raw) {
-    return null;
-  }
+    if (/^\d{12}$/.test(raw)) {
+      const repaired = `9${raw}`;
+      if (/^97[89]\d{10}$/.test(repaired) && isValidIsbn13(repaired)) {
+        return repaired;
+      }
+    }
 
-  if (/^97[89]\d{10}$/.test(raw) && isValidIsbn13(raw)) {
-    return raw;
-  }
-
-  // Some scanners (notably Safari fallbacks) occasionally drop the leading
-  // digit of EAN-13 and return 12 digits like "783...". Recover by prefixing 9.
-  if (/^\d{12}$/.test(raw)) {
-    const repaired = `9${raw}`;
-    if (/^97[89]\d{10}$/.test(repaired) && isValidIsbn13(repaired)) {
-      return repaired;
+    if (/^\d{9}[0-9X]$/.test(raw) && isValidIsbn10(raw)) {
+      return convertIsbn10To13(raw);
     }
   }
 
-  if (/^\d{9}[0-9X]$/.test(raw) && isValidIsbn10(raw)) {
-    return convertIsbn10To13(raw);
+  return null;
+}
+
+function getIsbnCandidates(value) {
+  if (!value) {
+    return [];
   }
 
-  return null;
+  const text = String(value).toUpperCase();
+  const compact = text.replace(/[^0-9X]/g, "");
+  const seen = new Set();
+  const out = [];
+
+  const pushCandidate = (candidate) => {
+    if (!candidate || seen.has(candidate)) {
+      return;
+    }
+    seen.add(candidate);
+    out.push(candidate);
+  };
+
+  pushCandidate(compact);
+
+  for (let i = 0; i <= compact.length - 13; i += 1) {
+    pushCandidate(compact.slice(i, i + 13));
+  }
+  for (let i = 0; i <= compact.length - 12; i += 1) {
+    pushCandidate(compact.slice(i, i + 12));
+  }
+  for (let i = 0; i <= compact.length - 10; i += 1) {
+    pushCandidate(compact.slice(i, i + 10));
+  }
+
+  const directMatches = text.match(/97[89]\d{10}|\d{12}|\d{9}[0-9X]/g) || [];
+  for (const match of directMatches) {
+    pushCandidate(match);
+  }
+
+  return out;
 }
 
 function isValidIsbn13(isbn) {
@@ -492,28 +423,18 @@ window.addEventListener("beforeunload", stopScanning);
 
 function stopScanning() {
   scanningActive = false;
-  nativeStartedAt = 0;
-  nativeFallbackTriggered = false;
-  if (rafId) {
-    cancelAnimationFrame(rafId);
+  if (!window.Quagga) {
+    return;
   }
 
-  if (stream) {
-    for (const track of stream.getTracks()) {
-      track.stop();
-    }
+  if (quaggaHandler) {
+    window.Quagga.offDetected(quaggaHandler);
+    quaggaHandler = null;
   }
-  stream = null;
-  detector = null;
 
-  if (html5Qrcode && scannerMode === "fallback") {
-    html5Qrcode
-      .stop()
-      .catch(() => {
-        // ignore
-      })
-      .finally(() => {
-        html5Qrcode = null;
-      });
+  try {
+    window.Quagga.stop();
+  } catch {
+    // Ignore stop errors.
   }
 }
