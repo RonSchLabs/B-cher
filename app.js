@@ -224,6 +224,15 @@ function toIsbn13(raw) {
     return raw;
   }
 
+  // Some scanners (notably Safari fallbacks) occasionally drop the leading
+  // digit of EAN-13 and return 12 digits like "783...". Recover by prefixing 9.
+  if (/^\d{12}$/.test(raw)) {
+    const repaired = `9${raw}`;
+    if (/^97[89]\d{10}$/.test(repaired) && isValidIsbn13(repaired)) {
+      return repaired;
+    }
+  }
+
   if (/^\d{9}[0-9X]$/.test(raw) && isValidIsbn10(raw)) {
     return convertIsbn10To13(raw);
   }
