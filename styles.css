@@ -112,7 +112,7 @@ video {
 
 .controls {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
@@ -126,6 +126,11 @@ button {
 
 .primary {
   background: var(--accent);
+  color: #fff;
+}
+
+.primary-alt {
+  background: #0d6663;
   color: #fff;
 }
 

@@ -3,8 +3,11 @@ const SCAN_COOLDOWN_MS = 1200;
 
 const cameraEl = document.getElementById("camera");
 const fallbackReaderEl = document.getElementById("fallbackReader");
+const photoReaderEl = document.getElementById("photoReader");
 const overlayEl = document.querySelector(".overlay");
 const startBtn = document.getElementById("startBtn");
+const photoScanBtn = document.getElementById("photoScanBtn");
+const photoInput = document.getElementById("photoInput");
 const exportBtn = document.getElementById("exportBtn");
 const clearBtn = document.getElementById("clearBtn");
 const statusText = document.getElementById("statusText");
@@ -15,6 +18,7 @@ let entries = loadEntries();
 let isbnSet = new Set(entries.map((entry) => entry.isbn));
 let detector = null;
 let html5Qrcode = null;
+let photoQrcode = null;
 let stream = null;
 let rafId = null;
 let lastScanAt = 0;
@@ -27,6 +31,8 @@ render();
 registerServiceWorker();
 
 startBtn.addEventListener("click", startCameraAndScan);
+photoScanBtn.addEventListener("click", triggerPhotoScan);
+photoInput.addEventListener("change", onPhotoSelected);
 exportBtn.addEventListener("click", exportCsv);
 clearBtn.addEventListener("click", clearEntries);
 
@@ -176,6 +182,44 @@ async function startFallbackScanner() {
   scanningActive = true;
   scannerMode = "fallback";
   setStatus("Kamera aktiv (Safari-Fallback). Bücher nacheinander scannen.");
+}
+
+function triggerPhotoScan() {
+  if (!photoInput) {
+    setStatus("Foto-Scan ist auf diesem Gerät nicht verfügbar.");
+    return;
+  }
+  photoInput.click();
+}
+
+async function onPhotoSelected(event) {
+  const file = event?.target?.files?.[0];
+  photoInput.value = "";
+  if (!file) {
+    return;
+  }
+
+  if (!window.Html5Qrcode) {
+    setStatus("Foto-Scan nicht verfügbar. Bitte Seite neu laden.");
+    return;
+  }
+
+  try {
+    setStatus("Foto wird ausgewertet...");
+    if (!photoReaderEl) {
+      setStatus("Foto-Scan nicht verfügbar.");
+      return;
+    }
+    if (!photoQrcode) {
+      photoQrcode = new Html5Qrcode("photoReader");
+    }
+    const decodedText = await photoQrcode.scanFile(file, true);
+    if (!handleRawCode(decodedText)) {
+      setStatus("Barcode erkannt, aber keine gültige ISBN.");
+    }
+  } catch {
+    setStatus("Kein Barcode im Foto erkannt. Bitte näher rangehen und ruhiger halten.");
+  }
 }
 
 async function scanLoop() {

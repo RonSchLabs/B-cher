@@ -28,9 +28,12 @@
 
       <section class="controls">
         <button id="startBtn" class="primary">Kamera starten</button>
+        <button id="photoScanBtn" class="primary-alt">Foto scannen</button>
         <button id="exportBtn" class="secondary">CSV exportieren</button>
         <button id="clearBtn" class="danger">Liste leeren</button>
       </section>
+      <input id="photoInput" type="file" accept="image/*" capture="environment" hidden />
+      <div id="photoReader" hidden></div>
 
       <section class="status-row">
         <div>
