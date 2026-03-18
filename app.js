@@ -128,9 +128,14 @@ async function startFallbackScanner() {
   await html5Qrcode.start(
     { facingMode: "environment" },
     {
-      fps: 10,
+      fps: 12,
       aspectRatio: 4 / 3,
       disableFlip: false,
+      qrbox: (viewfinderWidth, viewfinderHeight) => {
+        const width = Math.floor(Math.min(viewfinderWidth * 0.92, 560));
+        const height = Math.floor(Math.max(110, Math.min(viewfinderHeight * 0.30, 220)));
+        return { width, height };
+      },
       formatsToSupport: formatsToSupport.length > 0 ? formatsToSupport : undefined
     },
     (decodedText) => {
