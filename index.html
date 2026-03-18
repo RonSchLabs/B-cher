@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6efe3" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>ISBN Scanner</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="hero">
+        <p class="kicker">Offline auf iPhone</p>
+        <h1>ISBN Scanner</h1>
+        <p class="subtitle">Bücher nacheinander vor die Kamera halten. Erkennung läuft automatisch.</p>
+      </header>
+
+      <section class="camera-card">
+        <video id="camera" playsinline muted></video>
+        <div class="overlay">
+          <div class="scan-window"></div>
+        </div>
+      </section>
+
+      <section class="controls">
+        <button id="startBtn" class="primary">Kamera starten</button>
+        <button id="exportBtn" class="secondary">CSV exportieren</button>
+        <button id="clearBtn" class="danger">Liste leeren</button>
+      </section>
+
+      <section class="status-row">
+        <div>
+          <span class="label">Status</span>
+          <p id="statusText">Bereit</p>
+        </div>
+        <div>
+          <span class="label">Gespeichert</span>
+          <p><strong id="count">0</strong> ISBN</p>
+        </div>
+      </section>
+
+      <section class="list-card">
+        <h2>Erkannte ISBN</h2>
+        <ul id="isbnList"></ul>
+      </section>
+    </main>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

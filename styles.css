@@ -1,0 +1,180 @@
+:root {
+  --bg: #f6efe3;
+  --panel: #fff9ef;
+  --text: #1f2a1f;
+  --accent: #0b7a75;
+  --accent-strong: #065d59;
+  --warn: #a83939;
+  --line: #d8ccbc;
+  --shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 0% 0%, #ffe9bc 0%, transparent 40%),
+    radial-gradient(circle at 100% 100%, #c9efe5 0%, transparent 38%),
+    var(--bg);
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: max(14px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom));
+}
+
+.hero h1 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  letter-spacing: 0.2px;
+}
+
+.kicker {
+  margin: 2px 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+
+.subtitle {
+  margin-top: 8px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.camera-card,
+.list-card,
+.status-row,
+.controls {
+  margin-top: 14px;
+}
+
+.camera-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  background: #000;
+}
+
+video {
+  width: 100%;
+  display: block;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.scan-window {
+  width: 80%;
+  height: 28%;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 10px;
+  box-shadow: 0 0 0 200vmax rgba(0, 0, 0, 0.18);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 10px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.secondary {
+  background: #e8f4f3;
+  color: #0a5150;
+}
+
+.danger {
+  background: #f7e5e5;
+  color: var(--warn);
+}
+
+.status-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.status-row > div,
+.list-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 12px;
+}
+
+.label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #5e6c5e;
+}
+
+#statusText,
+.status-row p {
+  margin: 6px 0 0;
+}
+
+.list-card h2 {
+  margin: 4px 0 10px;
+  font-size: 16px;
+}
+
+#isbnList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+#isbnList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px dashed var(--line);
+  padding: 9px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+#isbnList li:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+@media (max-width: 480px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}

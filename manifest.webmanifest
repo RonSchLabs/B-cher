@@ -1,0 +1,11 @@
+{
+  "name": "ISBN Scanner",
+  "short_name": "ISBN Scan",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6efe3",
+  "theme_color": "#f6efe3",
+  "lang": "de-DE",
+  "description": "Offline ISBN-Scanner für Bücher.",
+  "icons": []
+}
