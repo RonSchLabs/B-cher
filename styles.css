@@ -74,12 +74,32 @@ video {
   object-fit: cover;
 }
 
+#fallbackReader {
+  width: 100%;
+  min-height: 260px;
+  background: #000;
+}
+
+#fallbackReader video {
+  width: 100% !important;
+  height: auto !important;
+  object-fit: cover;
+}
+
+#fallbackReader__scan_region {
+  background: #000;
+}
+
 .overlay {
   pointer-events: none;
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
+}
+
+.overlay.hidden {
+  display: none;
 }
 
 .scan-window {

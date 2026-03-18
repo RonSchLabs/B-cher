@@ -1,4 +1,4 @@
-const CACHE = "isbn-scanner-v1";
+const CACHE = "isbn-scanner-v2";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {

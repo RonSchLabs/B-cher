@@ -20,6 +20,7 @@
 
       <section class="camera-card">
         <video id="camera" playsinline muted></video>
+        <div id="fallbackReader" hidden></div>
         <div class="overlay">
           <div class="scan-window"></div>
         </div>
@@ -48,6 +49,7 @@
       </section>
     </main>
 
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <script src="app.js" type="module"></script>
   </body>
 </html>

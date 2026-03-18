@@ -2,6 +2,8 @@ const STORAGE_KEY = "isbn_scanner_entries_v1";
 const SCAN_COOLDOWN_MS = 1200;
 
 const cameraEl = document.getElementById("camera");
+const fallbackReaderEl = document.getElementById("fallbackReader");
+const overlayEl = document.querySelector(".overlay");
 const startBtn = document.getElementById("startBtn");
 const exportBtn = document.getElementById("exportBtn");
 const clearBtn = document.getElementById("clearBtn");
@@ -12,10 +14,12 @@ const isbnList = document.getElementById("isbnList");
 let entries = loadEntries();
 let isbnSet = new Set(entries.map((entry) => entry.isbn));
 let detector = null;
+let html5Qrcode = null;
 let stream = null;
 let rafId = null;
 let lastScanAt = 0;
 let scanningActive = false;
+let scannerMode = null;
 
 render();
 registerServiceWorker();
@@ -48,32 +52,17 @@ async function startCameraAndScan() {
       return;
     }
 
-    if (!("BarcodeDetector" in window)) {
-      setStatus("BarcodeDetector fehlt in Safari. Ich baue als Nächstes einen Fallback ein.");
-      return;
-    }
-
     if (scanningActive) {
       setStatus("Scanner läuft bereits.");
       return;
     }
 
-    detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
+    if ("BarcodeDetector" in window) {
+      await startNativeScanner();
+      return;
+    }
 
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
-      },
-      audio: false
-    });
-
-    cameraEl.srcObject = stream;
-    await cameraEl.play();
-    scanningActive = true;
-    setStatus("Kamera aktiv. Bücher nacheinander scannen.");
-    scanLoop();
+    await startFallbackScanner();
   } catch (error) {
     if (error?.name === "NotAllowedError") {
       setStatus("Kamerazugriff blockiert. Bitte in Safari erlauben.");
@@ -85,6 +74,76 @@ async function startCameraAndScan() {
     }
     setStatus(`Kamera-Start fehlgeschlagen: ${error?.name || "Unbekannter Fehler"}`);
   }
+}
+
+async function startNativeScanner() {
+  cameraEl.hidden = false;
+  fallbackReaderEl.hidden = true;
+  overlayEl.classList.remove("hidden");
+
+  detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] });
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 }
+    },
+    audio: false
+  });
+
+  cameraEl.srcObject = stream;
+  await cameraEl.play();
+  scanningActive = true;
+  scannerMode = "native";
+  setStatus("Kamera aktiv. Bücher nacheinander scannen.");
+  scanLoop();
+}
+
+async function startFallbackScanner() {
+  if (!window.Html5Qrcode) {
+    setStatus("Fallback-Scanner nicht geladen. Bitte Seite neu laden.");
+    return;
+  }
+
+  cameraEl.hidden = true;
+  fallbackReaderEl.hidden = false;
+  overlayEl.classList.add("hidden");
+
+  html5Qrcode = new Html5Qrcode("fallbackReader");
+  const formatsToSupport = [];
+
+  if (window.Html5QrcodeSupportedFormats?.EAN_13) {
+    formatsToSupport.push(window.Html5QrcodeSupportedFormats.EAN_13);
+  }
+  if (window.Html5QrcodeSupportedFormats?.EAN_8) {
+    formatsToSupport.push(window.Html5QrcodeSupportedFormats.EAN_8);
+  }
+  if (window.Html5QrcodeSupportedFormats?.UPC_A) {
+    formatsToSupport.push(window.Html5QrcodeSupportedFormats.UPC_A);
+  }
+  if (window.Html5QrcodeSupportedFormats?.UPC_E) {
+    formatsToSupport.push(window.Html5QrcodeSupportedFormats.UPC_E);
+  }
+
+  await html5Qrcode.start(
+    { facingMode: "environment" },
+    {
+      fps: 10,
+      aspectRatio: 4 / 3,
+      disableFlip: false,
+      formatsToSupport: formatsToSupport.length > 0 ? formatsToSupport : undefined
+    },
+    (decodedText) => {
+      handleRawCode(decodedText);
+    },
+    () => {
+      // Ignore continuous decode misses.
+    }
+  );
+
+  scanningActive = true;
+  scannerMode = "fallback";
+  setStatus("Kamera aktiv (Safari-Fallback). Bücher nacheinander scannen.");
 }
 
 async function scanLoop() {
@@ -105,38 +164,48 @@ async function scanLoop() {
 }
 
 function handleDetections(barcodes) {
-  const now = Date.now();
-  if (now - lastScanAt < SCAN_COOLDOWN_MS) {
+  if (Date.now() - lastScanAt < SCAN_COOLDOWN_MS) {
     return;
   }
 
   for (const barcode of barcodes) {
-    const raw = normalizeDigits(barcode.rawValue);
-    const isbn = toIsbn13(raw);
-    if (!isbn) {
-      continue;
-    }
-
-    if (isbnSet.has(isbn)) {
-      setStatus(`Duplikat erkannt: ${isbn}`);
-      lastScanAt = now;
+    if (handleRawCode(barcode.rawValue)) {
       return;
     }
-
-    const entry = {
-      isbn,
-      scannedAt: new Date().toISOString()
-    };
-
-    entries.unshift(entry);
-    isbnSet.add(isbn);
-    persistEntries();
-    render();
-    beep();
-    setStatus(`Gespeichert: ${isbn}`);
-    lastScanAt = now;
-    return;
   }
+}
+
+function handleRawCode(rawValue) {
+  const now = Date.now();
+  if (now - lastScanAt < SCAN_COOLDOWN_MS) {
+    return false;
+  }
+
+  const raw = normalizeDigits(rawValue);
+  const isbn = toIsbn13(raw);
+  if (!isbn) {
+    return false;
+  }
+
+  if (isbnSet.has(isbn)) {
+    setStatus(`Duplikat erkannt: ${isbn}`);
+    lastScanAt = now;
+    return true;
+  }
+
+  const entry = {
+    isbn,
+    scannedAt: new Date().toISOString()
+  };
+
+  entries.unshift(entry);
+  isbnSet.add(isbn);
+  persistEntries();
+  render();
+  beep();
+  setStatus(`Gespeichert: ${isbn}`);
+  lastScanAt = now;
+  return true;
 }
 
 function normalizeDigits(value) {
@@ -312,5 +381,18 @@ function stopScanning() {
     for (const track of stream.getTracks()) {
       track.stop();
     }
+  }
+  stream = null;
+  detector = null;
+
+  if (html5Qrcode && scannerMode === "fallback") {
+    html5Qrcode
+      .stop()
+      .catch(() => {
+        // ignore
+      })
+      .finally(() => {
+        html5Qrcode = null;
+      });
   }
 }
